@@ -119,4 +119,97 @@ describe('Tacx Sensor',()=>{
     
     })
 
+
+    describe('sendRoadFeel', () => {
+
+        let sensor: TacxAdvancedFitnessMachineDevice;
+
+        const makePeripheral = () => ({
+            write: vi.fn().mockResolvedValue(true),
+            isConnected: vi.fn().mockReturnValue(true),
+        });
+
+        beforeEach(() => {
+            sensor = new TacxAdvancedFitnessMachineDevice(null, { id: '4711', logger: MockLogger });
+        });
+
+        test('Road surface at full intensity sends correct FE-C page 221 bytes', async () => {
+            // surface=1 (Road), intensity=100 → page 0xDD
+            const expected = Buffer.from('A4094F05DD0164FFFFFFFFFFA0', 'hex');
+            const peripheral = makePeripheral();
+            sensor = new TacxAdvancedFitnessMachineDevice(peripheral, { id: '4711', logger: MockLogger });
+
+            const res = await sensor.sendRoadFeel(1, 100);
+
+            expect(res).toBe(true);
+            expect(peripheral.write).toHaveBeenCalledWith(TACX_FE_C_TX, expected, { withoutResponse: true });
+        });
+
+        test('Off (surface=0, intensity=0) sends correct bytes', async () => {
+            const expected = Buffer.from('A4094F05DD0000FFFFFFFFFFC5', 'hex');
+            const peripheral = makePeripheral();
+            sensor = new TacxAdvancedFitnessMachineDevice(peripheral, { id: '4711', logger: MockLogger });
+
+            const res = await sensor.sendRoadFeel(0, 0);
+
+            expect(res).toBe(true);
+            expect(peripheral.write).toHaveBeenCalledWith(TACX_FE_C_TX, expected, { withoutResponse: true });
+        });
+
+        test('CobblestoneHard at 50% intensity sends correct bytes', async () => {
+            // surface=2, intensity=50 → 0x32 = 50
+            const expected = Buffer.from('A4094F05DD0232FFFFFFFFFFF5', 'hex');
+            const peripheral = makePeripheral();
+            sensor = new TacxAdvancedFitnessMachineDevice(peripheral, { id: '4711', logger: MockLogger });
+
+            const res = await sensor.sendRoadFeel(2, 50);
+
+            expect(res).toBe(true);
+            expect(peripheral.write).toHaveBeenCalledWith(TACX_FE_C_TX, expected, { withoutResponse: true });
+        });
+
+        test('intensity is clamped to 100 when above 100', async () => {
+            const expected = Buffer.from('A4094F05DD0164FFFFFFFFFFA0', 'hex'); // 0x64 = 100
+            const peripheral = makePeripheral();
+            sensor = new TacxAdvancedFitnessMachineDevice(peripheral, { id: '4711', logger: MockLogger });
+
+            await sensor.sendRoadFeel(1, 150);
+
+            expect(peripheral.write).toHaveBeenCalledWith(TACX_FE_C_TX, expected, { withoutResponse: true });
+        });
+
+        test('intensity is clamped to 0 when below 0', async () => {
+            const expected = Buffer.from('A4094F05DD0100FFFFFFFFFFC4', 'hex'); // surface=1, intensity=0
+            const peripheral = makePeripheral();
+            sensor = new TacxAdvancedFitnessMachineDevice(peripheral, { id: '4711', logger: MockLogger });
+
+            await sensor.sendRoadFeel(1, -10);
+
+            expect(peripheral.write).toHaveBeenCalledWith(TACX_FE_C_TX, expected, { withoutResponse: true });
+        });
+
+        test('default intensity is 100', async () => {
+            const expected = Buffer.from('A4094F05DD0164FFFFFFFFFFA0', 'hex');
+            const peripheral = makePeripheral();
+            sensor = new TacxAdvancedFitnessMachineDevice(peripheral, { id: '4711', logger: MockLogger });
+
+            await sensor.sendRoadFeel(1);
+
+            expect(peripheral.write).toHaveBeenCalledWith(TACX_FE_C_TX, expected, { withoutResponse: true });
+        });
+
+        test('returns false when write fails', async () => {
+            const peripheral = {
+                write: vi.fn().mockRejectedValue(new Error('BLE error')),
+                isConnected: vi.fn().mockReturnValue(true),
+            };
+            sensor = new TacxAdvancedFitnessMachineDevice(peripheral, { id: '4711', logger: MockLogger });
+
+            const res = await sensor.sendRoadFeel(1, 100);
+
+            expect(res).toBe(false);
+        });
+
+    });
+
 })
