@@ -210,6 +210,49 @@ describe('Tacx Sensor',()=>{
             expect(res).toBe(false);
         });
 
-    });
 
-})
+        // ── parameterised: every RoadFeelSurface at 100 % intensity ──────────
+        describe('all RoadFeelSurface values at 100% intensity', () => {
+
+            /**
+             * Expected bytes computed via the same getChecksum() XOR chain used
+             * by buildMessage(): (c ^ byte) % 0xFF for each byte in the message.
+             *
+             * Message layout (13 bytes):
+             *   A4  09  4F  05  DD  [surf]  64  FF FF FF FF FF  [chk]
+             *   SYN LEN MID  CH  PG  surf  100  ─────5×rsvd────  chk
+             */
+            const surfaceCases: Array<[string, number, string]> = [
+                ['Off',             0,  'A4094F05DD0064FFFFFFFFFFA1'],
+                ['Road',            1,  'A4094F05DD0164FFFFFFFFFFA0'],
+                ['CobblestoneHard', 2,  'A4094F05DD0264FFFFFFFFFFA3'],
+                ['CobblestoneEasy', 3,  'A4094F05DD0364FFFFFFFFFFA2'],
+                ['BrickRoad',       4,  'A4094F05DD0464FFFFFFFFFFA5'],
+                ['Gravel',          5,  'A4094F05DD0564FFFFFFFFFFA4'],
+                ['Ice',             6,  'A4094F05DD0664FFFFFFFFFFA7'],
+                ['WoodenPlanks',    7,  'A4094F05DD0764FFFFFFFFFFA6'],
+                ['GravelLight',     8,  'A4094F05DD0864FFFFFFFFFFA9'],
+                ['GravelDeep',      9,  'A4094F05DD0964FFFFFFFFFFA8'],
+                ['Snow',           10,  'A4094F05DD0A64FFFFFFFFFFAB'],
+            ];
+
+            test.each(surfaceCases)(
+                '%s (surface=%i) produces correct 13-byte FE-C page 221 message',
+                async (_name, surfaceValue, expectedHex) => {
+                    const expected = Buffer.from(expectedHex, 'hex');
+                    const peripheral = makePeripheral();
+                    sensor = new TacxAdvancedFitnessMachineDevice(peripheral, { id: '4711', logger: MockLogger });
+
+                    const res = await sensor.sendRoadFeel(surfaceValue, 100);
+
+                    expect(res).toBe(true);
+                    expect(peripheral.write).toHaveBeenCalledOnce();
+                    expect(peripheral.write).toHaveBeenCalledWith(TACX_FE_C_TX, expected, { withoutResponse: true });
+                }
+            );
+
+        });
+
+    }); // ── sendRoadFeel ──
+
+}) // ── Tacx Sensor ──

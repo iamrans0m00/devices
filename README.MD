@@ -294,3 +294,23 @@ This method should only be called for SmartTrainers or PowerMeters
 ## Examples
 
 Please have a look at the [example code](./samples)
+
+---
+
+## Fork additions (iamrans0m00/devices)
+
+### Road Feel – Tacx Neo (`src/ble/tacx/`)
+
+| Symbol | File | Description |
+|--------|------|-------------|
+| `RoadFeelSurface` | `consts.ts` | Enum of 11 surface types (Off, Road, Cobblestone, Gravel, Ice, Snow, …) |
+| `BleTacxSensor.sendRoadFeel(surface, intensity)` | `sensor.ts` | Builds and writes FE-C data page 221 (0xDD) over BLE |
+| `BleTacxAdapter.setRoadFeel(surface, intensity)` | `adapter.ts` | Public API — delegates to `sendRoadFeel` |
+
+**Usage from a React hook (after resolving surface via IPC):**
+```typescript
+const adapter = deviceConfig.getSelected(IncyclistCapability.Control)
+if (adapter && typeof adapter.setRoadFeel === 'function') {
+    await adapter.setRoadFeel(RoadFeelSurface.Gravel, 80)  // 80% intensity
+}
+```

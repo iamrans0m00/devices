@@ -698,24 +698,24 @@ export default class TacxAdvancedFitnessMachineDevice extends BleFitnessMachineD
      */
     async sendRoadFeel(surface: number, intensity: number = 100): Promise<boolean> {
         const logStr = `sendRoadFeel(surface=${surface}, intensity=${intensity})`;
-        this.logEvent({message: logStr});
+        this.logEvent( {message:logStr})
 
         const s = surface & 0xFF;
         const i = Math.min(100, Math.max(0, Math.round(intensity))) & 0xFF;
 
         const payload = [];
-        payload.push(DEFAULT_CHANNEL);
-        payload.push(ANTMessages.roadFeel);         // data page 221 (0xDD): Tacx Road Feel
-        payload.push(s);                            // road surface type (0-10)
-        payload.push(i);                            // vibration intensity (0-100 %)
-        payload.push(0xFF);                         // reserved
-        payload.push(0xFF);                         // reserved
-        payload.push(0xFF);                         // reserved
-        payload.push(0xFF);                         // reserved
-        payload.push(0xFF);                         // reserved
+        payload.push (DEFAULT_CHANNEL);
+        payload.push (ANTMessages.roadFeel);        // data page 221 (0xDD): Tacx Road Feel
+        payload.push (s);                           // road surface type (0-10)
+        payload.push (i);                           // vibration intensity (0-100 %)
+        payload.push (0xFF);                        // reserved
+        payload.push (0xFF);                        // reserved
+        payload.push (0xFF);                        // reserved
+        payload.push (0xFF);                        // reserved
+        payload.push (0xFF);                        // reserved
 
-        const data = this.buildMessage(payload, ACKNOWLEDGED_DATA);
-        return await this.sendMessage(data);
+        const data = this.buildMessage(payload,ACKNOWLEDGED_DATA )
+        return await this.sendMessage(data)
     }
 
 }
