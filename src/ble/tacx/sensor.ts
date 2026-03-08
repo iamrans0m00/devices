@@ -686,4 +686,36 @@ export default class TacxAdvancedFitnessMachineDevice extends BleFitnessMachineD
 
 
 
+
+    /**
+     * Send a road feel (road surface simulation) command to the Tacx Neo.
+     *
+     * Uses Tacx proprietary ANT+ FE-C data page 221 (0xDD).
+     *
+     * @param surface   Road surface type (use the RoadFeelSurface enum).
+     *                  0 = off, 1 = Road, 2 = CobblestoneHard … 10 = Snow.
+     * @param intensity Vibration intensity as a percentage 0-100 (default 100).
+     */
+    async sendRoadFeel(surface: number, intensity: number = 100): Promise<boolean> {
+        const logStr = `sendRoadFeel(surface=${surface}, intensity=${intensity})`;
+        this.logEvent({message: logStr});
+
+        const s = surface & 0xFF;
+        const i = Math.min(100, Math.max(0, Math.round(intensity))) & 0xFF;
+
+        const payload = [];
+        payload.push(DEFAULT_CHANNEL);
+        payload.push(ANTMessages.roadFeel);         // data page 221 (0xDD): Tacx Road Feel
+        payload.push(s);                            // road surface type (0-10)
+        payload.push(i);                            // vibration intensity (0-100 %)
+        payload.push(0xFF);                         // reserved
+        payload.push(0xFF);                         // reserved
+        payload.push(0xFF);                         // reserved
+        payload.push(0xFF);                         // reserved
+        payload.push(0xFF);                         // reserved
+
+        const data = this.buildMessage(payload, ACKNOWLEDGED_DATA);
+        return await this.sendMessage(data);
+    }
+
 }
