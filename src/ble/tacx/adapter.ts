@@ -1,6 +1,7 @@
 import {EventLogger} from 'gd-eventlog';
 import { BleFmAdapter} from '../fm/index.js';
 import TacxAdvancedFitnessMachineDevice from './sensor.js';
+import { RoadFeelSurface } from './consts.js';
 import { DEFAULT_BIKE_WEIGHT, DEFAULT_USER_WEIGHT } from "../../base/consts.js";
 import { BleDeviceSettings, BleStartProperties, IBlePeripheral } from '../types.js';
 import { DeviceProperties,IncyclistCapability,IAdapter } from '../../types/index.js';
@@ -72,5 +73,15 @@ export default class BleTacxAdapter extends BleFmAdapter {
     }
 
 
-}
+    /**
+     * Activate road feel (road surface simulation) on the Tacx Neo.
+     *
+     * @param surface   Road surface. Use {@link RoadFeelSurface} enum.
+     * @param intensity Vibration intensity 0-100 % (default 100).
+     */
+    async setRoadFeel(surface: RoadFeelSurface, intensity: number = 100): Promise<boolean> {
+        const sensor = this.getSensor() as TacxAdvancedFitnessMachineDevice;
+        return sensor.sendRoadFeel(surface, intensity);
+    }
 
+}

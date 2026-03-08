@@ -1,4 +1,3 @@
-
 export enum ANTMessages {
     calibrationCommand = 1,
     calibrationStatus = 2,
@@ -14,8 +13,24 @@ export enum ANTMessages {
     requestData = 70,
     commandStatus = 71,
     manufactererData = 80,
-    productInformation = 81
+    productInformation = 81,
+    roadFeel = 221
 }
+
+export enum RoadFeelSurface {
+    Off          = 0,
+    Road         = 1,
+    CobblestoneHard = 2,
+    CobblestoneEasy = 3,
+    BrickRoad    = 4,
+    Gravel       = 5,
+    Ice          = 6,
+    WoodenPlanks = 7,
+    GravelLight  = 8,
+    GravelDeep   = 9,
+    Snow         = 10
+}
+
 export const SYNC_BYTE = 0xA4; //164
 export const DEFAULT_CHANNEL = 5;
 export const ACKNOWLEDGED_DATA = 0x4F; //79
