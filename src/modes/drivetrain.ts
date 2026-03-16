@@ -37,8 +37,9 @@ export class Drivetrain {
     synchroShift: boolean = false
 
     constructor(config: DrivetrainConfig) {
-        this.chainrings = config.chainrings
-        this.cassette = config.cassette
+        // Enforce sort invariants: chainrings largest-first, cassette smallest-first
+        this.chainrings = [...config.chainrings].sort((a, b) => b - a)
+        this.cassette = [...config.cassette].sort((a, b) => a - b)
         this.position = this.getStartingGear()
     }
 

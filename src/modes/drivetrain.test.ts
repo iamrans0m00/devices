@@ -14,6 +14,16 @@ describe('Drivetrain', () => {
         cassette: [11, 12, 13, 14, 15, 17, 19, 21, 24, 28, 32]
     }
 
+    test('constructor sorts chainrings largest-first and cassette smallest-first', () => {
+        const dt = new Drivetrain({
+            type: '2x',
+            chainrings: [34, 50],  // wrong order (should be 50, 34)
+            cassette: [28, 11, 21, 15]  // wrong order
+        })
+        expect(dt.chainrings).toEqual([50, 34])
+        expect(dt.cassette).toEqual([11, 15, 21, 28])
+    })
+
     describe('creation', () => {
         test('1x drivetrain creation from config', () => {
             const dt = new Drivetrain(config1x)
