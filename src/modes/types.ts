@@ -10,6 +10,7 @@ export type UpdateRequest = {
     targetResistance?: number;
     targetResistanceDelta?: number;
     gearDelta?: number;
+    frontDelta?: number;
     reset?: boolean;
     refresh?: boolean;
     init?: boolean;

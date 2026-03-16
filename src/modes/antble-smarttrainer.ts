@@ -4,9 +4,10 @@ import { IAdapter, IncyclistBikeData } from "../types/index.js";
 import calc, { calculateVirtualSpeed } from "../utils/calculations.js";
 import { useFeatureToggle } from "../features/index.js";
 import { intVal } from "../utils/utils.js";
+import { Drivetrain, DrivetrainConfig } from "./drivetrain.js";
 
 
-export type VirtshiftMode = 'Disabled' |  'SlopeDelta' | 'Adapter' | 'Simulated';
+export type VirtshiftMode = 'Disabled' |  'SlopeDelta' | 'Adapter' | 'Simulated' | 'Natural';
 
 const MIN_POWER = 25;
 export default class SmartTrainerCyclingMode extends PowerBasedCyclingModeBase implements ICyclingMode {
@@ -32,6 +33,7 @@ export default class SmartTrainerCyclingMode extends PowerBasedCyclingModeBase i
     protected prevData
     protected prevEkin: number
     protected prevSimPower: number
+    protected drivetrain: Drivetrain
 
     protected readonly gearRatios = [
         0.75, 0.87, 0.99, 1.11, 1.23, 1.38, 1.53, 1.68, 1.86, 2.04, 2.22, 2.40,
@@ -45,6 +47,21 @@ export default class SmartTrainerCyclingMode extends PowerBasedCyclingModeBase i
     }
 
 
+    protected initDrivetrain(): Drivetrain {
+        if (this.drivetrain) return this.drivetrain;
+
+        const config: DrivetrainConfig = this.getSetting('drivetrainConfig') ?? {
+            type: '1x',
+            chainrings: [34],
+            cassette: [11, 13, 15, 17, 19, 21, 23, 25, 27, 30, 32, 34]
+        };
+        this.drivetrain = new Drivetrain(config);
+
+        this.drivetrain.synchroShift = this.getSetting('synchroShift') ?? false;
+
+        return this.drivetrain;
+    }
+
     getBikeInitRequest(): UpdateRequest {
         const virtshiftMode = this.getVirtualShiftMode();
 
@@ -52,6 +69,12 @@ export default class SmartTrainerCyclingMode extends PowerBasedCyclingModeBase i
             this.gear = intVal(this.getSetting('startGear'))
             const gearRatio = this.gearRatios[this.gear-1]
             return {slope:0, gearRatio, isHub:true}
+        }
+
+        if (virtshiftMode==='Natural') {
+            this.initDrivetrain();
+            this.prevRequest = {slope:0}
+            return {slope:0}
         }
 
         this.prevRequest = {slope:0}
@@ -99,11 +122,13 @@ export default class SmartTrainerCyclingMode extends PowerBasedCyclingModeBase i
             const options= virtShiftEnabled ? [
                 'Disabled',
                 { key:'Incyclist', display:'App only (beta)' },
-                { key: 'Mixed', display: 'App + Bike' }
+                { key: 'Mixed', display: 'App + Bike' },
+                { key: 'Natural', display: 'Natural Shifting' }
             ] :
             [
                 'Disabled',
-                { key: 'Mixed', display: 'Enabled' }
+                { key: 'Mixed', display: 'Enabled' },
+                { key: 'Natural', display: 'Natural Shifting' }
 
             ]
 
@@ -116,7 +141,8 @@ export default class SmartTrainerCyclingMode extends PowerBasedCyclingModeBase i
                 'Disabled',
                 { key: 'Incyclist', display:'App only (beta)' },
                 { key: 'Mixed', display: 'App + Bike' },
-                { key:'SmartTrainer', display: 'SmartTreiner (beta)' }
+                { key:'SmartTrainer', display: 'SmartTreiner (beta)' },
+                { key: 'Natural', display: 'Natural Shifting' }
             ]            
 
             virtshift = {key:'virtshift', name: 'Virtual Shifting', description: 'Enable virtual shifting', type: CyclingModeProperyType.SingleSelect, options, default: 'Mixed'}
@@ -219,6 +245,36 @@ export default class SmartTrainerCyclingMode extends PowerBasedCyclingModeBase i
 
     }
 
+    protected checkSlopeWithNaturalShifting(request: UpdateRequest, newRequest: UpdateRequest={}) {
+        const dt = this.initDrivetrain();
+
+        if (request.slope!==undefined) {
+            this.data.slope = Number.parseFloat(request.slope.toFixed(1));
+        }
+
+        const cadence = this.data.pedalRpm ?? 0;
+
+        if (cadence > 0) {
+            const gearRatio = dt.getCurrentGearRatio();
+            const virtualSpeed = calculateVirtualSpeed(cadence, gearRatio); // m/s
+            const m = this.adapter?.getWeight() ?? 85;
+            const slope = this.data.slope ?? 0;
+
+            let adjustedSlope = slope;
+            try {
+                const slopeAdj = slope >= 0 ? this.getSetting('slopeAdj') : this.getSetting('slopeAdjDown');
+                if (slopeAdj !== undefined) adjustedSlope = slope * slopeAdj / 100;
+            } catch {}
+
+            const power = calc.calculatePower(m, virtualSpeed, adjustedSlope);
+            newRequest.targetPower = Math.max(power, MIN_POWER);
+        } else {
+            this.checkSlopeNoShiftig(request, newRequest);
+        }
+
+        delete request.slope;
+    }
+
     checkSlope(request: UpdateRequest, newRequest: UpdateRequest={}) {  
         const virtshiftMode = this.getVirtualShiftMode();
 
@@ -228,6 +284,9 @@ export default class SmartTrainerCyclingMode extends PowerBasedCyclingModeBase i
                 break;
             case 'Simulated':
                 this.checkSlopeWithSimulatedShifting(request,newRequest);
+                break;
+            case 'Natural':
+                this.checkSlopeWithNaturalShifting(request,newRequest);
                 break;
             case 'Adapter':
                 this.checkSlopeWithAdapterShifting(request,newRequest);
@@ -247,16 +306,16 @@ export default class SmartTrainerCyclingMode extends PowerBasedCyclingModeBase i
         //     return
         // }
 
-        if ( virtshiftMode!=='Simulated') {    
+        if (virtshiftMode!=='Simulated' && virtshiftMode!=='Natural') {
             return
         }
 
-        if ( request.targetPower!==undefined || request.targetPowerDelta!==undefined || request.gearDelta!==undefined || request.gearRatio!==undefined) {    
+        if ( request.targetPower!==undefined || request.targetPowerDelta!==undefined || request.gearDelta!==undefined || request.gearRatio!==undefined) {
             return
         }
 
         if (this.data?.pedalRpm!==this.prevData?.pedalRpm) {
-            this.logger.logEvent({message:'cadence changed', cadence:this.data?.pedalRpm, prevCadence:this.prevData?.pedalRpm})            
+            this.logger.logEvent({message:'cadence changed', cadence:this.data?.pedalRpm, prevCadence:this.prevData?.pedalRpm})
             //this.calculateSimulatedPower('cadence')
             request.slope = request.slope??this.data.slope
         }
@@ -358,6 +417,31 @@ export default class SmartTrainerCyclingMode extends PowerBasedCyclingModeBase i
 
                 }
                 break;
+            case 'Natural': {
+                const dt = this.initDrivetrain();
+
+                // Handle front shift
+                if (request.frontDelta !== undefined) {
+                    const result = dt.shiftFront(request.frontDelta);
+                    delete request.frontDelta;
+                    if (result) {
+                        this.logger.logEvent({ message: 'front gear changed', chainringIndex: result.chainringIndex, cogIndex: result.cogIndex });
+                        this.data.gearStr = this.getGearString();
+                    }
+                }
+
+                // Handle rear shift
+                if (request.gearDelta !== undefined) {
+                    const oldPos = { ...dt.position };
+                    const result = dt.synchroShiftRear(request.gearDelta);
+                    delete request.gearDelta;
+                    if (result) {
+                        this.logger.logEvent({ message: 'rear gear changed', from: oldPos, to: result });
+                        this.data.gearStr = this.getGearString();
+                    }
+                }
+                break;
+            }
             case 'Adapter':
                 if (request.gearRatio!==undefined) {
                     const oldGear = this.gear;
@@ -466,6 +550,9 @@ export default class SmartTrainerCyclingMode extends PowerBasedCyclingModeBase i
             else if (virtshiftMode==='Mixed') {
                 return 'SlopeDelta'
             }
+            else if (virtshiftMode==='Natural') {
+                return 'Natural'
+            }
             else if (virtshiftMode === 'Enabled') {
                 return this.adapter?.supportsVirtualShifting() ? 'Adapter' : 'Simulated';
             }
@@ -486,7 +573,7 @@ export default class SmartTrainerCyclingMode extends PowerBasedCyclingModeBase i
         let virtualSpeed
         data.gearStr = this.getGearString()
 
-        if (mode!=='Simulated')  {
+        if (mode!=='Simulated' && mode!=='Natural')  {
             return data
         }
 
@@ -510,7 +597,7 @@ export default class SmartTrainerCyclingMode extends PowerBasedCyclingModeBase i
     protected updateRequired(request?: UpdateRequest): boolean {
 
         const virtshiftMode = this.getVirtualShiftMode();
-        if (virtshiftMode==='Adapter' || virtshiftMode==='Simulated') {
+        if (virtshiftMode==='Adapter' || virtshiftMode==='Simulated' || virtshiftMode==='Natural') {
             return true;
         }
         return super.updateRequired(request);
@@ -560,6 +647,16 @@ export default class SmartTrainerCyclingMode extends PowerBasedCyclingModeBase i
 
         if (mode==="Disabled")
             return undefined
+
+        if (mode==='Natural') {
+            const dt = this.initDrivetrain();
+            const pos = dt.position;
+            const rearStr = `${pos.cogIndex + 1}/${dt.cogCount}`;
+            if (dt.chainringCount > 1) {
+                return `${dt.chainrings[pos.chainringIndex]}T ${rearStr}`;
+            }
+            return rearStr;
+        }
 
         if ( mode==='Simulated') {
             this.gear = this.gear ?? Number(this.getSetting('startGear') ?? 0)
