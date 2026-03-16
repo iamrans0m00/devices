@@ -122,12 +122,14 @@ export default class BleTacxAdapter extends BleFmAdapter {
      * vibration between slope ticks.
      */
     async sendUpdate(request, enforced = false) {
-        const hasGearChange = request?.gearDelta !== undefined || request?.frontDelta !== undefined;
+        // Capture gear state before update to detect actual changes
+        const gearBefore = this.getCyclingMode()?.getData?.()?.gearStr;
 
         const result = await super.sendUpdate(request, enforced)
 
-        // Fire haptic feedback on gear changes (non-blocking, fire-and-forget)
-        if (hasGearChange && this.hapticShift) {
+        // Fire haptic feedback only when gear actually changed (not on failed shifts at limit)
+        const gearAfter = this.getCyclingMode()?.getData?.()?.gearStr;
+        if (gearBefore !== gearAfter && this.hapticShift) {
             this.fireShiftHaptic().catch(() => {});
         }
 
