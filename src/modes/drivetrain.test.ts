@@ -1,4 +1,4 @@
-import { Drivetrain, DrivetrainConfig, CASSETTE_PRESETS } from './drivetrain'
+import { Drivetrain, DrivetrainConfig, CASSETTE_PRESETS, GearPosition } from './drivetrain'
 
 describe('Drivetrain', () => {
 
@@ -105,5 +105,169 @@ describe('CASSETTE_PRESETS', () => {
             const speedCount = Number(match![1])
             expect(preset.cogs).toHaveLength(speedCount)
         }
+    })
+})
+
+describe('Gear State Machine', () => {
+
+    const config2x: DrivetrainConfig = {
+        type: '2x',
+        chainrings: [50, 34],
+        cassette: [11, 12, 13, 14, 15, 17, 19, 21, 24, 28, 32]
+    }
+
+    const config1x: DrivetrainConfig = {
+        type: '1x',
+        chainrings: [40],
+        cassette: [11, 13, 15, 17, 19, 21, 24, 28, 32, 36, 42]
+    }
+
+    describe('initial position', () => {
+        test('position matches getStartingGear()', () => {
+            const dt = new Drivetrain(config2x)
+            const expected = dt.getStartingGear()
+            expect(dt.position).toEqual(expected)
+        })
+    })
+
+    describe('shiftRear', () => {
+        test('shiftRear(1) moves one cog harder (decreases cogIndex)', () => {
+            const dt = new Drivetrain(config2x)
+            const startCog = dt.position.cogIndex
+            const result = dt.shiftRear(1)
+            expect(result).not.toBeNull()
+            expect(result!.cogIndex).toBe(startCog - 1)
+            expect(dt.position.cogIndex).toBe(startCog - 1)
+        })
+
+        test('shiftRear(-1) moves one cog easier (increases cogIndex)', () => {
+            const dt = new Drivetrain(config2x)
+            const startCog = dt.position.cogIndex
+            const result = dt.shiftRear(-1)
+            expect(result).not.toBeNull()
+            expect(result!.cogIndex).toBe(startCog + 1)
+            expect(dt.position.cogIndex).toBe(startCog + 1)
+        })
+
+        test('shiftRear at hardest limit (cogIndex 0) returns null', () => {
+            const dt = new Drivetrain(config2x)
+            // Move to hardest cog
+            while (dt.shiftRear(1) !== null) { /* keep shifting */ }
+            expect(dt.position.cogIndex).toBe(0)
+            const result = dt.shiftRear(1)
+            expect(result).toBeNull()
+            expect(dt.position.cogIndex).toBe(0) // unchanged
+        })
+
+        test('shiftRear at easiest limit (last cogIndex) returns null', () => {
+            const dt = new Drivetrain(config2x)
+            // Move to easiest cog
+            while (dt.shiftRear(-1) !== null) { /* keep shifting */ }
+            expect(dt.position.cogIndex).toBe(config2x.cassette.length - 1)
+            const result = dt.shiftRear(-1)
+            expect(result).toBeNull()
+            expect(dt.position.cogIndex).toBe(config2x.cassette.length - 1)
+        })
+    })
+
+    describe('shiftFront', () => {
+        test('shiftFront(1) moves to bigger chainring (decreases chainringIndex)', () => {
+            const dt = new Drivetrain(config2x)
+            // Starting gear is chainringIndex 1 (small ring)
+            expect(dt.position.chainringIndex).toBe(1)
+            const result = dt.shiftFront(1)
+            expect(result).not.toBeNull()
+            expect(result!.chainringIndex).toBe(0) // big ring
+            expect(dt.position.chainringIndex).toBe(0)
+        })
+
+        test('shiftFront(-1) moves to smaller chainring (increases chainringIndex)', () => {
+            const dt = new Drivetrain(config2x)
+            // First shift to big ring
+            dt.shiftFront(1)
+            expect(dt.position.chainringIndex).toBe(0)
+            const result = dt.shiftFront(-1)
+            expect(result).not.toBeNull()
+            expect(result!.chainringIndex).toBe(1) // small ring
+        })
+
+        test('shiftFront at big ring limit returns null', () => {
+            const dt = new Drivetrain(config2x)
+            dt.shiftFront(1) // go to big ring (index 0)
+            const result = dt.shiftFront(1) // try to go bigger
+            expect(result).toBeNull()
+            expect(dt.position.chainringIndex).toBe(0)
+        })
+
+        test('shiftFront on 1x always returns null', () => {
+            const dt = new Drivetrain(config1x)
+            expect(dt.shiftFront(1)).toBeNull()
+            expect(dt.shiftFront(-1)).toBeNull()
+            expect(dt.position.chainringIndex).toBe(0)
+        })
+    })
+
+    describe('getCurrentGearRatio', () => {
+        test('returns correct ratio for current position', () => {
+            const dt = new Drivetrain(config2x)
+            const pos = dt.position
+            const expected = config2x.chainrings[pos.chainringIndex] / config2x.cassette[pos.cogIndex]
+            expect(dt.getCurrentGearRatio()).toBeCloseTo(expected, 5)
+        })
+    })
+
+    describe('synchroShiftRear', () => {
+        test('synchroShift off: behaves like shiftRear', () => {
+            const dt = new Drivetrain(config2x)
+            dt.synchroShift = false
+            // Move to hardest cog
+            while (dt.shiftRear(1) !== null) { /* keep shifting */ }
+            expect(dt.position.cogIndex).toBe(0)
+            const result = dt.synchroShiftRear(1)
+            expect(result).toBeNull()
+        })
+
+        test('synchroShift on: rear at hardest limit auto-shifts front up and resets rear to easiest', () => {
+            const dt = new Drivetrain(config2x)
+            dt.synchroShift = true
+            // Starting at small ring (index 1). Move to hardest cog.
+            while (dt.shiftRear(1) !== null) { /* keep shifting */ }
+            expect(dt.position.cogIndex).toBe(0)
+            expect(dt.position.chainringIndex).toBe(1) // small ring
+
+            const result = dt.synchroShiftRear(1)
+            expect(result).not.toBeNull()
+            expect(result!.chainringIndex).toBe(0) // shifted to big ring
+            expect(result!.cogIndex).toBe(config2x.cassette.length - 1) // reset to easiest cog
+        })
+
+        test('synchroShift on: rear at easiest limit auto-shifts front down and resets rear to hardest', () => {
+            const dt = new Drivetrain(config2x)
+            dt.synchroShift = true
+            // Shift to big ring first
+            dt.shiftFront(1)
+            expect(dt.position.chainringIndex).toBe(0)
+            // Move to easiest cog
+            while (dt.shiftRear(-1) !== null) { /* keep shifting */ }
+            expect(dt.position.cogIndex).toBe(config2x.cassette.length - 1)
+
+            const result = dt.synchroShiftRear(-1)
+            expect(result).not.toBeNull()
+            expect(result!.chainringIndex).toBe(1) // shifted to small ring
+            expect(result!.cogIndex).toBe(0) // reset to hardest cog
+        })
+
+        test('synchroShift on: rear at limit AND front at limit returns null', () => {
+            const dt = new Drivetrain(config2x)
+            dt.synchroShift = true
+            // Already at small ring (index 1). Move to easiest cog.
+            while (dt.shiftRear(-1) !== null) { /* keep shifting */ }
+            expect(dt.position.chainringIndex).toBe(1) // small ring (last index)
+            expect(dt.position.cogIndex).toBe(config2x.cassette.length - 1)
+
+            // Try shifting easier - front is already at smallest ring
+            const result = dt.synchroShiftRear(-1)
+            expect(result).toBeNull()
+        })
     })
 })

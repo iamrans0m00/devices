@@ -33,10 +33,13 @@ export const CASSETTE_PRESETS: { label: string; cogs: number[] }[] = [
 export class Drivetrain {
     readonly chainrings: number[]
     readonly cassette: number[]
+    position: GearPosition
+    synchroShift: boolean = false
 
     constructor(config: DrivetrainConfig) {
         this.chainrings = config.chainrings
         this.cassette = config.cassette
+        this.position = this.getStartingGear()
     }
 
     get cogCount(): number {
@@ -56,5 +59,67 @@ export class Drivetrain {
             chainringIndex: this.chainrings.length - 1,
             cogIndex: Math.max(0, this.cassette.length - 3)
         }
+    }
+
+    shiftRear(delta: number): GearPosition | null {
+        // delta > 0 = harder = smaller cog = decrease cogIndex
+        // delta < 0 = easier = bigger cog = increase cogIndex
+        const newCogIndex = this.position.cogIndex - delta
+        if (newCogIndex < 0 || newCogIndex > this.cassette.length - 1) {
+            return null
+        }
+        this.position = { ...this.position, cogIndex: newCogIndex }
+        return this.position
+    }
+
+    shiftFront(delta: number): GearPosition | null {
+        // delta > 0 = bigger chainring = decrease chainringIndex (largest first)
+        // delta < 0 = smaller chainring = increase chainringIndex
+        const newChainringIndex = this.position.chainringIndex - delta
+        if (newChainringIndex < 0 || newChainringIndex > this.chainrings.length - 1) {
+            return null
+        }
+        this.position = { ...this.position, chainringIndex: newChainringIndex }
+        return this.position
+    }
+
+    synchroShiftRear(delta: number): GearPosition | null {
+        if (!this.synchroShift) {
+            return this.shiftRear(delta)
+        }
+
+        const result = this.shiftRear(delta)
+        if (result !== null) {
+            return result
+        }
+
+        // Rear hit the limit, try to auto-shift front
+        if (delta > 0 && this.position.cogIndex === 0) {
+            // At hardest rear cog, try shifting front to bigger chainring
+            const frontResult = this.shiftFront(1)
+            if (frontResult === null) {
+                return null
+            }
+            // Reset rear to easiest cog
+            this.position = { ...this.position, cogIndex: this.cassette.length - 1 }
+            return this.position
+        }
+
+        if (delta < 0 && this.position.cogIndex === this.cassette.length - 1) {
+            // At easiest rear cog, try shifting front to smaller chainring
+            const frontResult = this.shiftFront(-1)
+            if (frontResult === null) {
+                return null
+            }
+            // Reset rear to hardest cog
+            this.position = { ...this.position, cogIndex: 0 }
+            return this.position
+        }
+
+        return null
+    }
+
+    getCurrentGearRatio(): number {
+        return this.getGearRatio(this.position.chainringIndex, this.position.cogIndex)
     }
 }
