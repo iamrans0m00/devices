@@ -133,9 +133,26 @@ describe('Tacx Sensor',()=>{
             sensor = new TacxAdvancedFitnessMachineDevice(null, { id: '4711', logger: MockLogger });
         });
 
-        test('Road surface at full intensity sends correct FE-C page 221 bytes', async () => {
-            // surface=1 (Road), intensity=100 → page 0xDD
-            const expected = Buffer.from('A4094F05DD0164FFFFFFFFFFA0', 'hex');
+        /**
+         * Neo Modes page 0xFC message layout (13 bytes):
+         *   [0] A4   SYNC
+         *   [1] 09   length
+         *   [2] 4F   Acknowledged Data
+         *   [3] 05   channel
+         *   [4] FC   Neo Modes page
+         *   [5] 00   reserved
+         *   [6] 00   isokinetic mode (off)
+         *   [7] 00   isokinetic speed (0)
+         *   [8] 00   reserved
+         *   [9] XX   road surface (0-9)
+         *  [10] YY   road surface intensity (0-100 or 255)
+         *  [11] 00   reserved
+         *  [12] ZZ   additive checksum: sum(bytes[1..11]) & 0xFF
+         */
+
+        test('Concrete at full intensity (100%) sends correct Neo Modes page 0xFC bytes', async () => {
+            // surface=1, intensity=100 (0x64) → checksum = (345+1+100) & 0xFF = 0xBE
+            const expected = Buffer.from('A4094F05FC00000000016400BE', 'hex');
             const peripheral = makePeripheral();
             sensor = new TacxAdvancedFitnessMachineDevice(peripheral, { id: '4711', logger: MockLogger });
 
@@ -146,7 +163,8 @@ describe('Tacx Sensor',()=>{
         });
 
         test('Off (surface=0, intensity=0) sends correct bytes', async () => {
-            const expected = Buffer.from('A4094F05DD0000FFFFFFFFFFC5', 'hex');
+            // checksum = 345 & 0xFF = 0x59
+            const expected = Buffer.from('A4094F05FC0000000000000059', 'hex');
             const peripheral = makePeripheral();
             sensor = new TacxAdvancedFitnessMachineDevice(peripheral, { id: '4711', logger: MockLogger });
 
@@ -156,20 +174,21 @@ describe('Tacx Sensor',()=>{
             expect(peripheral.write).toHaveBeenCalledWith(TACX_FE_C_TX, expected, { withoutResponse: true });
         });
 
-        test('CobblestoneHard at 50% intensity sends correct bytes', async () => {
-            // surface=2, intensity=50 → 0x32 = 50
-            const expected = Buffer.from('A4094F05DD0232FFFFFFFFFFF5', 'hex');
+        test('CobblestonesHard at 50% intensity sends correct bytes', async () => {
+            // surface=3, intensity=50 (0x32) → checksum = (345+3+50) & 0xFF = 0x8E
+            const expected = Buffer.from('A4094F05FC000000000332008E', 'hex');
             const peripheral = makePeripheral();
             sensor = new TacxAdvancedFitnessMachineDevice(peripheral, { id: '4711', logger: MockLogger });
 
-            const res = await sensor.sendRoadFeel(2, 50);
+            const res = await sensor.sendRoadFeel(3, 50);
 
             expect(res).toBe(true);
             expect(peripheral.write).toHaveBeenCalledWith(TACX_FE_C_TX, expected, { withoutResponse: true });
         });
 
-        test('intensity is clamped to 100 when above 100', async () => {
-            const expected = Buffer.from('A4094F05DD0164FFFFFFFFFFA0', 'hex'); // 0x64 = 100
+        test('intensity is clamped to 100 when above 100 (non-255)', async () => {
+            // surface=1, 150 → clamp to 100 → same as full
+            const expected = Buffer.from('A4094F05FC00000000016400BE', 'hex');
             const peripheral = makePeripheral();
             sensor = new TacxAdvancedFitnessMachineDevice(peripheral, { id: '4711', logger: MockLogger });
 
@@ -179,7 +198,8 @@ describe('Tacx Sensor',()=>{
         });
 
         test('intensity is clamped to 0 when below 0', async () => {
-            const expected = Buffer.from('A4094F05DD0100FFFFFFFFFFC4', 'hex'); // surface=1, intensity=0
+            // surface=1, intensity=0 → checksum = (345+1) & 0xFF = 0x5A
+            const expected = Buffer.from('A4094F05FC000000000100005A', 'hex');
             const peripheral = makePeripheral();
             sensor = new TacxAdvancedFitnessMachineDevice(peripheral, { id: '4711', logger: MockLogger });
 
@@ -188,8 +208,20 @@ describe('Tacx Sensor',()=>{
             expect(peripheral.write).toHaveBeenCalledWith(TACX_FE_C_TX, expected, { withoutResponse: true });
         });
 
+        test('intensity 255 is passed through as special "default" value', async () => {
+            // surface=1, intensity=255 (0xFF) → checksum = (345+1+255) & 0xFF = 0x59
+            const expected = Buffer.from('A4094F05FC0000000001FF0059', 'hex');
+            const peripheral = makePeripheral();
+            sensor = new TacxAdvancedFitnessMachineDevice(peripheral, { id: '4711', logger: MockLogger });
+
+            await sensor.sendRoadFeel(1, 255);
+
+            expect(peripheral.write).toHaveBeenCalledWith(TACX_FE_C_TX, expected, { withoutResponse: true });
+        });
+
         test('default intensity is 100', async () => {
-            const expected = Buffer.from('A4094F05DD0164FFFFFFFFFFA0', 'hex');
+            // surface=1, default intensity=100 → same as explicit 100
+            const expected = Buffer.from('A4094F05FC00000000016400BE', 'hex');
             const peripheral = makePeripheral();
             sensor = new TacxAdvancedFitnessMachineDevice(peripheral, { id: '4711', logger: MockLogger });
 
@@ -215,29 +247,27 @@ describe('Tacx Sensor',()=>{
         describe('all RoadFeelSurface values at 100% intensity', () => {
 
             /**
-             * Expected bytes computed via the same getChecksum() XOR chain used
-             * by buildMessage(): (c ^ byte) % 0xFF for each byte in the message.
+             * Neo Modes page 0xFC with additive checksum.
+             * Base checksum (bytes[1..8]): 09+4F+05+FC+00+00+00+00 = 345
+             * Full checksum: (345 + surface + 100) & 0xFF
              *
-             * Message layout (13 bytes):
-             *   A4  09  4F  05  DD  [surf]  64  FF FF FF FF FF  [chk]
-             *   SYN LEN MID  CH  PG  surf  100  ─────5×rsvd────  chk
+             * Intensity byte = 0x64 (100 decimal).
              */
             const surfaceCases: Array<[string, number, string]> = [
-                ['Off',             0,  'A4094F05DD0064FFFFFFFFFFA1'],
-                ['Road',            1,  'A4094F05DD0164FFFFFFFFFFA0'],
-                ['CobblestoneHard', 2,  'A4094F05DD0264FFFFFFFFFFA3'],
-                ['CobblestoneEasy', 3,  'A4094F05DD0364FFFFFFFFFFA2'],
-                ['BrickRoad',       4,  'A4094F05DD0464FFFFFFFFFFA5'],
-                ['Gravel',          5,  'A4094F05DD0564FFFFFFFFFFA4'],
-                ['Ice',             6,  'A4094F05DD0664FFFFFFFFFFA7'],
-                ['WoodenPlanks',    7,  'A4094F05DD0764FFFFFFFFFFA6'],
-                ['GravelLight',     8,  'A4094F05DD0864FFFFFFFFFFA9'],
-                ['GravelDeep',      9,  'A4094F05DD0964FFFFFFFFFFA8'],
-                ['Snow',           10,  'A4094F05DD0A64FFFFFFFFFFAB'],
+                ['Off',              0,  'A4094F05FC00000000006400BD'],
+                ['Concrete',         1,  'A4094F05FC00000000016400BE'],
+                ['CattleGrid',       2,  'A4094F05FC00000000026400BF'],
+                ['CobblestonesHard', 3,  'A4094F05FC00000000036400C0'],
+                ['CobblestonesSoft', 4,  'A4094F05FC00000000046400C1'],
+                ['BrickRoad',        5,  'A4094F05FC00000000056400C2'],
+                ['OffRoad',          6,  'A4094F05FC00000000066400C3'],
+                ['Gravel',           7,  'A4094F05FC00000000076400C4'],
+                ['Ice',              8,  'A4094F05FC00000000086400C5'],
+                ['WoodenBoards',     9,  'A4094F05FC00000000096400C6'],
             ];
 
             test.each(surfaceCases)(
-                '%s (surface=%i) produces correct 13-byte FE-C page 221 message',
+                '%s (surface=%i) produces correct 13-byte Neo Modes page 0xFC message',
                 async (_name, surfaceValue, expectedHex) => {
                     const expected = Buffer.from(expectedHex, 'hex');
                     const peripheral = makePeripheral();

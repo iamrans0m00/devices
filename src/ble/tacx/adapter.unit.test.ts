@@ -42,17 +42,18 @@ describe('BleTacxAdapter', () => {
 
     describe('setRoadFeel', () => {
 
-        test('delegates to sensor.sendRoadFeel with surface and intensity', async () => {
+        test('delegates to sensor.sendRoadFeel with surface and intensity passthrough', async () => {
             const { adapter, sensor } = makeAdapter();
             const result = await adapter.setRoadFeel(RoadFeelSurface.Gravel, 75);
+            // intensity 0-100 passes through directly to the protocol
             expect(sensor.sendRoadFeel).toHaveBeenCalledWith(RoadFeelSurface.Gravel, 75);
             expect(result).toBe(true);
         });
 
         test('default intensity is 100', async () => {
             const { adapter, sensor } = makeAdapter();
-            await adapter.setRoadFeel(RoadFeelSurface.Road);
-            expect(sensor.sendRoadFeel).toHaveBeenCalledWith(RoadFeelSurface.Road, 100);
+            await adapter.setRoadFeel(RoadFeelSurface.Concrete);
+            expect(sensor.sendRoadFeel).toHaveBeenCalledWith(RoadFeelSurface.Concrete, 100);
         });
 
         test('propagates false when sensor write fails', async () => {
@@ -65,29 +66,28 @@ describe('BleTacxAdapter', () => {
         test('propagates rejection from sensor', async () => {
             const { adapter, sensor } = makeAdapter();
             sensor.sendRoadFeel.mockRejectedValue(new Error('BLE disconnected'));
-            await expect(adapter.setRoadFeel(RoadFeelSurface.Snow, 100))
+            await expect(adapter.setRoadFeel(RoadFeelSurface.WoodenBoards, 100))
                 .rejects.toThrow('BLE disconnected');
         });
 
         test('calls getSensor once per invocation', async () => {
             const { adapter } = makeAdapter();
-            await adapter.setRoadFeel(RoadFeelSurface.Road, 80);
+            await adapter.setRoadFeel(RoadFeelSurface.Concrete, 80);
             expect(adapter['getSensor']).toHaveBeenCalledTimes(1);
         });
 
-        // ── parameterised: all 11 RoadFeelSurface enum values ────────────────
+        // ── parameterised: all 10 RoadFeelSurface enum values ────────────────
         const allSurfaces: Array<[string, RoadFeelSurface]> = [
             ['Off',              RoadFeelSurface.Off],
-            ['Road',             RoadFeelSurface.Road],
-            ['CobblestoneHard',  RoadFeelSurface.CobblestoneHard],
-            ['CobblestoneEasy',  RoadFeelSurface.CobblestoneEasy],
+            ['Concrete',         RoadFeelSurface.Concrete],
+            ['CattleGrid',       RoadFeelSurface.CattleGrid],
+            ['CobblestonesHard', RoadFeelSurface.CobblestonesHard],
+            ['CobblestonesSoft', RoadFeelSurface.CobblestonesSoft],
             ['BrickRoad',        RoadFeelSurface.BrickRoad],
+            ['OffRoad',          RoadFeelSurface.OffRoad],
             ['Gravel',           RoadFeelSurface.Gravel],
             ['Ice',              RoadFeelSurface.Ice],
-            ['WoodenPlanks',     RoadFeelSurface.WoodenPlanks],
-            ['GravelLight',      RoadFeelSurface.GravelLight],
-            ['GravelDeep',       RoadFeelSurface.GravelDeep],
-            ['Snow',             RoadFeelSurface.Snow],
+            ['WoodenBoards',     RoadFeelSurface.WoodenBoards],
         ];
 
         test.each(allSurfaces)(
@@ -96,6 +96,7 @@ describe('BleTacxAdapter', () => {
                 const { adapter, sensor } = makeAdapter();
                 await adapter.setRoadFeel(surface, 100);
                 expect(sensor.sendRoadFeel).toHaveBeenCalledOnce();
+                // intensity passes through directly (0-100)
                 expect(sensor.sendRoadFeel).toHaveBeenCalledWith(surface, 100);
                 const numericVal = sensor.sendRoadFeel.mock.calls[0][0] as number;
                 expect(numericVal).toBe(RoadFeelSurface[name as keyof typeof RoadFeelSurface]);
@@ -107,26 +108,25 @@ describe('BleTacxAdapter', () => {
     // ── RoadFeelSurface enum sanity checks ───────────────────────────────────
     describe('RoadFeelSurface enum', () => {
 
-        test('has correct numeric values for all 11 surfaces', () => {
+        test('has correct numeric values for all 10 surfaces (Tacx protocol)', () => {
             expect(RoadFeelSurface.Off).toBe(0);
-            expect(RoadFeelSurface.Road).toBe(1);
-            expect(RoadFeelSurface.CobblestoneHard).toBe(2);
-            expect(RoadFeelSurface.CobblestoneEasy).toBe(3);
-            expect(RoadFeelSurface.BrickRoad).toBe(4);
-            expect(RoadFeelSurface.Gravel).toBe(5);
-            expect(RoadFeelSurface.Ice).toBe(6);
-            expect(RoadFeelSurface.WoodenPlanks).toBe(7);
-            expect(RoadFeelSurface.GravelLight).toBe(8);
-            expect(RoadFeelSurface.GravelDeep).toBe(9);
-            expect(RoadFeelSurface.Snow).toBe(10);
+            expect(RoadFeelSurface.Concrete).toBe(1);
+            expect(RoadFeelSurface.CattleGrid).toBe(2);
+            expect(RoadFeelSurface.CobblestonesHard).toBe(3);
+            expect(RoadFeelSurface.CobblestonesSoft).toBe(4);
+            expect(RoadFeelSurface.BrickRoad).toBe(5);
+            expect(RoadFeelSurface.OffRoad).toBe(6);
+            expect(RoadFeelSurface.Gravel).toBe(7);
+            expect(RoadFeelSurface.Ice).toBe(8);
+            expect(RoadFeelSurface.WoodenBoards).toBe(9);
         });
 
-        test('covers exactly 11 surface types (values 0-10)', () => {
+        test('covers exactly 10 surface types (values 0-9)', () => {
             const numericValues = Object.values(RoadFeelSurface)
                 .filter((v): v is number => typeof v === 'number');
-            expect(numericValues).toHaveLength(11);
+            expect(numericValues).toHaveLength(10);
             expect(Math.min(...numericValues)).toBe(0);
-            expect(Math.max(...numericValues)).toBe(10);
+            expect(Math.max(...numericValues)).toBe(9);
         });
 
         test('string keys map 1:1 to their numeric values', () => {

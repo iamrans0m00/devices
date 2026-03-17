@@ -14,21 +14,28 @@ export enum ANTMessages {
     commandStatus = 71,
     manufactererData = 80,
     productInformation = 81,
-    roadFeel = 221
+    neoModes = 252
 }
 
+/**
+ * Road surface types for Tacx Neo road feel simulation.
+ * Values match the official Tacx protocol (pycycling / Garmin SDK).
+ *
+ *  0 = Off, 1 = Concrete, 2 = CattleGrid, 3 = CobblestonesHard,
+ *  4 = CobblestonesSoft, 5 = BrickRoad, 6 = OffRoad, 7 = Gravel,
+ *  8 = Ice, 9 = WoodenBoards
+ */
 export enum RoadFeelSurface {
-    Off          = 0,
-    Road         = 1,
-    CobblestoneHard = 2,
-    CobblestoneEasy = 3,
-    BrickRoad    = 4,
-    Gravel       = 5,
-    Ice          = 6,
-    WoodenPlanks = 7,
-    GravelLight  = 8,
-    GravelDeep   = 9,
-    Snow         = 10
+    Off              = 0,
+    Concrete         = 1,
+    CattleGrid       = 2,
+    CobblestonesHard = 3,
+    CobblestonesSoft = 4,
+    BrickRoad        = 5,
+    OffRoad          = 6,
+    Gravel           = 7,
+    Ice              = 8,
+    WoodenBoards     = 9
 }
 
 export const SYNC_BYTE = 0xA4; //164

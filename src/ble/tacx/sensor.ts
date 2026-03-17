@@ -1,6 +1,6 @@
 import { LegacyProfile } from "../../antv2/types.js";
 import { CSC_MEASUREMENT, CSP_MEASUREMENT, FTMS_STATUS, INDOOR_BIKE_DATA } from "../consts.js";
-import { TACX_FE_C_BLE, TACX_FE_C_RX, TACX_FE_C_TX , SYNC_BYTE, ANTMessages, DEFAULT_CHANNEL, ACKNOWLEDGED_DATA } from "./consts.js";
+import { TACX_FE_C_BLE, TACX_FE_C_RX, TACX_FE_C_TX , SYNC_BYTE, ANTMessages, DEFAULT_CHANNEL, ACKNOWLEDGED_DATA, RoadFeelSurface } from "./consts.js";
 import { CrankData } from "../cp/index.js";
 import { IndoorBikeData } from "../fm/index.js";
 import BleFitnessMachineDevice from "../fm/sensor.js";
@@ -690,32 +690,64 @@ export default class TacxAdvancedFitnessMachineDevice extends BleFitnessMachineD
     /**
      * Send a road feel (road surface simulation) command to the Tacx Neo.
      *
-     * Uses Tacx proprietary ANT+ FE-C data page 221 (0xDD).
+     * Uses Tacx proprietary data page 0xFC (252) — "Neo Modes" — which
+     * combines isokinetic control and road-surface simulation in a single
+     * message.  The byte layout and additive checksum match the protocol
+     * documented in pycycling / Garmin Tacx SDK.
      *
-     * @param surface   Road surface type (use the RoadFeelSurface enum).
-     *                  0 = off, 1 = Road, 2 = CobblestoneHard … 10 = Snow.
-     * @param intensity Vibration intensity as a percentage 0-100 (default 100).
+     * @param surface   Road surface type 0-9 (use the RoadFeelSurface enum).
+     * @param intensity Vibration intensity 0-100 %, or 255 for default/full
+     *                  (default 100).
      */
     async sendRoadFeel(surface: number, intensity: number = 100): Promise<boolean> {
         const logStr = `sendRoadFeel(surface=${surface}, intensity=${intensity})`;
         this.logEvent( {message:logStr})
 
-        const s = surface & 0xFF;
-        const i = Math.min(100, Math.max(0, Math.round(intensity))) & 0xFF;
+        const s = Math.min(9, Math.max(0, Math.round(surface))) & 0xFF;
+        // Protocol accepts 0-100 (percentage) or 255 (default/full).
+        // Clamp to 0-100; allow 255 as passthrough.
+        const i = (intensity === 255) ? 255
+                : Math.min(100, Math.max(0, Math.round(intensity))) & 0xFF;
 
-        const payload = [];
-        payload.push (DEFAULT_CHANNEL);
-        payload.push (ANTMessages.roadFeel);        // data page 221 (0xDD): Tacx Road Feel
-        payload.push (s);                           // road surface type (0-10)
-        payload.push (i);                           // vibration intensity (0-100 %)
-        payload.push (0xFF);                        // reserved
-        payload.push (0xFF);                        // reserved
-        payload.push (0xFF);                        // reserved
-        payload.push (0xFF);                        // reserved
-        payload.push (0xFF);                        // reserved
+        // Neo Modes page layout (matches pycycling set_neo_modes):
+        //  [0] 0xA4  SYNC
+        //  [1] 0x09  payload length (9 bytes)
+        //  [2] 0x4F  Acknowledged Data
+        //  [3] 0x05  channel
+        //  [4] 0xFC  page = Neo Modes (252)
+        //  [5] 0x00  reserved
+        //  [6] 0x00  isokinetic mode (0 = off)
+        //  [7] 0x00  isokinetic speed (0 = off)
+        //  [8] 0x00  reserved
+        //  [9] surface  road surface pattern (0-9)
+        // [10] intensity road surface intensity (0-100 or 255)
+        // [11] 0x00  reserved
+        // [12] checksum  (additive: sum of bytes [1..11] & 0xFF)
 
-        const data = this.buildMessage(payload,ACKNOWLEDGED_DATA )
-        return await this.sendMessage(data)
+        const msg: number[] = [
+            SYNC_BYTE,                  // 0xA4
+            0x09,                       // length = 9
+            ACKNOWLEDGED_DATA,          // 0x4F
+            DEFAULT_CHANNEL,            // 0x05
+            ANTMessages.neoModes,       // 0xFC
+            0x00,                       // reserved
+            0x00,                       // isokinetic mode off
+            0x00,                       // isokinetic speed 0
+            0x00,                       // reserved
+            s,                          // road surface
+            i,                          // road surface intensity
+            0x00,                       // reserved
+        ];
+
+        // Additive checksum over bytes [1..end]
+        let checksum = 0;
+        for (let idx = 1; idx < msg.length; idx++) {
+            checksum = (checksum + msg[idx]) & 0xFF;
+        }
+        msg.push(checksum);
+
+        const data = Buffer.from(msg);
+        return await this.sendMessage(data);
     }
 
 }
