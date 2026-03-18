@@ -591,7 +591,8 @@ export default class SmartTrainerCyclingMode extends PowerBasedCyclingModeBase i
         const gearStr = this.getGearString();
         const data = super.getData();
 
-        return {...data,gearStr}
+        const gearInfo = this.getGearInfo();
+        return {...data, gearStr, gearInfo} as Partial<IncyclistBikeData>
     }
 
     protected updateRequired(request?: UpdateRequest): boolean {
@@ -673,6 +674,20 @@ export default class SmartTrainerCyclingMode extends PowerBasedCyclingModeBase i
 
         return this.gear?.toString()        
     }   
+
+    protected getGearInfo(): { cogIndex: number; cogCount: number; chainrings: number[]; chainringIndex: number } | undefined {
+        const mode = this.getVirtualShiftMode();
+        if (mode !== 'Natural') return undefined;
+
+        const dt = this.initDrivetrain();
+        const pos = dt.position;
+        return {
+            cogIndex: pos.cogIndex,
+            cogCount: dt.cogCount,
+            chainrings: dt.chainrings,
+            chainringIndex: pos.chainringIndex,
+        };
+    }
 
     protected getFeatureToogle() {
         return useFeatureToggle()
