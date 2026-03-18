@@ -7,6 +7,7 @@ export  type IncyclistAdapterData = {
     distance?: number;  // m    
     timestamp?: number;
     gearStr?: string
+    gearInfo?: any
 
     deviceTime?: number;
     deviceDistanceCounter?: number;
@@ -22,6 +23,7 @@ export type IncyclistBikeData = {
     time?: number
     gear?: number
     gearStr?: string
+    gearInfo?: any
     slope?: number
     resistance?: number
 }
